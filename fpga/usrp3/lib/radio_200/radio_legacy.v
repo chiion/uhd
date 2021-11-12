@@ -35,8 +35,8 @@ module radio_legacy
 
    output [63:0] debug
    );
-
-
+	
+	
    // ///////////////////////////////////////////////////////////////////////////////
    // FIFO Interfacing to the bus clk domain
    // in_tdata splits to tx_tdata and ctrl_tdata
@@ -276,12 +276,19 @@ endgenerate
 
    generate
       if (FP_GPIO != 0) begin: add_fp_gpio
-         gpio_atr #(.BASE(SR_FP_GPIO), .WIDTH(10), .FAB_CTRL_EN(0)) fp_gpio_atr
+         //gpio_atr #(.BASE(SR_FP_GPIO), .WIDTH(10), .FAB_CTRL_EN(0)) fp_gpio_atr
+         //   (.clk(radio_clk),.reset(radio_rst),
+         //   .set_stb(set_stb),.set_addr(set_addr),.set_data(set_data),
+         //   .rx(run_rx), .tx(run_tx),
+         //   .gpio_in(fp_gpio_in), .gpio_out(fp_gpio_out), .gpio_ddr(fp_gpio_ddr), 
+         //   .gpio_out_fab(10'h000 /* no fabric control */), .gpio_sw_rb(fp_gpio_readback));
+         gpio_atr_custom #(.BASE(SR_FP_GPIO), .FAB_CTRL_EN(0)) fp_gpio_atr
             (.clk(radio_clk),.reset(radio_rst),
             .set_stb(set_stb),.set_addr(set_addr),.set_data(set_data),
             .rx(run_rx), .tx(run_tx),
             .gpio_in(fp_gpio_in), .gpio_out(fp_gpio_out), .gpio_ddr(fp_gpio_ddr), 
             .gpio_out_fab(10'h000 /* no fabric control */), .gpio_sw_rb(fp_gpio_readback));
+				
       end
    endgenerate
 

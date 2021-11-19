@@ -21,8 +21,8 @@
 
 module gpio_atr_custom #(
   parameter BASE          = 0,
-  parameter FAB_CTRL_EN   = 0,
-  parameter DEFAULT_DDR   = 0
+  parameter DEFAULT_DDR   = 0,
+  parameter DEFAULT_IDLE  = 0
 ) (
   input clk, input reset,                                       //Clock and reset
   input set_stb, input [7:0] set_addr, input [31:0] set_data,   //Settings control interface
@@ -30,13 +30,16 @@ module gpio_atr_custom #(
   input      [9:0]  gpio_in,                              //GPIO input state
   output reg [9:0]  gpio_out,                             //GPIO output state
   output reg [9:0]  gpio_ddr,                             //GPIO direction (0=input, 1=output)
-  input      [9:0]  gpio_out_fab,                         //GPIO driver bus from fabric
   output reg [9:0]  gpio_sw_rb                            //Readback value for software
 );
   genvar i;
 
-  wire [9:0]   in_tx, in_rx, in_fdx, ddr_reg, atr_disable, fabric_ctrl;
+  wire [9:0]   in_idle, in_tx, in_rx, in_fdx, ddr_reg, atr_disable;
   reg [9:0]    ogpio, igpio;
+  
+  setting_reg #(.my_addr(BASE+0), .width(10), .at_reset(DEFAULT_IDLE)) reg_idle (
+	 .clk(clk),.rst(reset),.strobe(set_stb),.addr(set_addr), .in(set_data),
+	 .out(in_idle),.changed());
 
   setting_reg #(.my_addr(BASE+1), .width(10)) reg_rx (
     .clk(clk),.rst(reset),.strobe(set_stb),.addr(set_addr), .in(set_data),
@@ -58,16 +61,9 @@ module gpio_atr_custom #(
     .clk(clk),.rst(reset),.strobe(set_stb),.addr(set_addr), .in(set_data),
     .out(atr_disable),.changed());
 
-  generate if (FAB_CTRL_EN == 1) begin
-    setting_reg #(.my_addr(BASE+6), .width(10)) reg_fabric_ctrl (
-      .clk(clk),.rst(reset),.strobe(set_stb),.addr(set_addr), .in(set_data),
-      .out(fabric_ctrl),.changed());
-  end else begin
-    assign fabric_ctrl = {10'b0};
-  end endgenerate
 
-  //12 bit counter
-  reg [9:0] counter;
+  //10 bit counter
+  reg [11:0] counter;
   reg [9:0] counter_buf;
   always @(posedge clk) begin
 		if (reset) begin
@@ -76,7 +72,7 @@ module gpio_atr_custom #(
 		end
 		else begin
 			counter <= counter + 1;
-			counter_buf[3:0] <= counter[9:6];
+			counter_buf[7:0] <= counter[11:4];
 		end
   end
  
@@ -90,18 +86,17 @@ module gpio_atr_custom #(
     //ATR selection MUX
     always @(posedge clk) begin
       case({atr_disable[i], tx_d, rx_d})
-        3'b000:   ogpio[i] <= counter_buf[i];
-        3'b001:   ogpio[i] <= in_rx[i];
+        3'b000:   ogpio[i] <= in_idle[i];
+        3'b001:   ogpio[i] <= counter_buf[i];	// send clock signal in rx mode
         3'b010:   ogpio[i] <= in_tx[i];
         3'b011:   ogpio[i] <= in_fdx[i];
-        default:  ogpio[i] <= counter_buf[i];   //If ATR mode is disabled, always use clock out
+        default:  ogpio[i] <= in_idle[i];   //If ATR mode is disabled, always use IDLE value
       endcase
     end
 	
    //Pipeline input, output and direction
-   //For fabric access, insert MUX as close to the IO as possible
    always @(posedge clk) begin
-     gpio_out[i] <= fabric_ctrl[i] ? gpio_out_fab[i] : ogpio[i];
+     gpio_out[i] <= ogpio[i];
    end
   end endgenerate
  
@@ -114,10 +109,12 @@ module gpio_atr_custom #(
     gpio_ddr <= ddr_reg;
   end
   
+
   //Generate software readback state
   generate for (i=0; i<10; i=i+1) begin: gpio_rb_gen
     always @(posedge clk)
       gpio_sw_rb[i] <= gpio_ddr[i] ? gpio_out[i] : igpio[i];
   end endgenerate
 
-endmodule // gpio_atr
+
+endmodule // gpio_atr_custom

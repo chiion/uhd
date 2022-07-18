@@ -9,6 +9,7 @@
 #include <uhd/rfnoc/multichan_register_iface.hpp>
 #include <uhd/rfnoc/register_iface.hpp>
 #include <uhd/utils/log.hpp>
+#include <uhd/utils/math.hpp>
 #include <uhdlib/rfnoc/radio_control_impl.hpp>
 #include <uhdlib/utils/compat_check.hpp>
 #include <map>
@@ -26,35 +27,7 @@ const std::string radio_control::ALL_LOS   = "all";
 const std::string radio_control::ALL_GAINS = "";
 
 const uint16_t radio_control_impl::MAJOR_COMPAT = 0;
-const uint16_t radio_control_impl::MINOR_COMPAT = 0;
-
-const uint32_t radio_control_impl::regmap::REG_COMPAT_NUM;
-const uint32_t radio_control_impl::regmap::REG_RADIO_WIDTH;
-const uint32_t radio_control_impl::regmap::RADIO_BASE_ADDR;
-const uint32_t radio_control_impl::regmap::REG_CHAN_OFFSET;
-const uint32_t radio_control_impl::regmap::RADIO_ADDR_W;
-const uint32_t radio_control_impl::regmap::REG_LOOPBACK_EN;
-const uint32_t radio_control_impl::regmap::REG_RX_STATUS;
-const uint32_t radio_control_impl::regmap::REG_RX_CMD;
-const uint32_t radio_control_impl::regmap::REG_RX_CMD_NUM_WORDS_LO;
-const uint32_t radio_control_impl::regmap::REG_RX_CMD_NUM_WORDS_HI;
-const uint32_t radio_control_impl::regmap::REG_RX_CMD_TIME_LO;
-const uint32_t radio_control_impl::regmap::REG_RX_CMD_TIME_HI;
-const uint32_t radio_control_impl::regmap::REG_RX_MAX_WORDS_PER_PKT;
-const uint32_t radio_control_impl::regmap::REG_RX_ERR_PORT;
-const uint32_t radio_control_impl::regmap::REG_RX_ERR_REM_PORT;
-const uint32_t radio_control_impl::regmap::REG_RX_ERR_REM_EPID;
-const uint32_t radio_control_impl::regmap::REG_RX_ERR_ADDR;
-const uint32_t radio_control_impl::regmap::REG_TX_IDLE_VALUE;
-const uint32_t radio_control_impl::regmap::REG_TX_ERROR_POLICY;
-const uint32_t radio_control_impl::regmap::REG_TX_ERR_PORT;
-const uint32_t radio_control_impl::regmap::REG_TX_ERR_REM_PORT;
-const uint32_t radio_control_impl::regmap::REG_TX_ERR_REM_EPID;
-const uint32_t radio_control_impl::regmap::REG_TX_ERR_ADDR;
-const uint32_t radio_control_impl::regmap::RX_CMD_STOP;
-const uint32_t radio_control_impl::regmap::RX_CMD_FINITE;
-const uint32_t radio_control_impl::regmap::RX_CMD_CONTINUOUS;
-const uint32_t radio_control_impl::regmap::RX_CMD_TIMED_POS;
+const uint16_t radio_control_impl::MINOR_COMPAT = 1;
 
 const uhd::fs_path radio_control_impl::DB_PATH("dboard");
 const uhd::fs_path radio_control_impl::FE_PATH("frontends");
@@ -88,6 +61,7 @@ radio_control_impl::radio_control_impl(make_args_ptr make_args)
                                   << ", num_outputs=" << get_num_output_ports());
     set_prop_forwarding_policy(forwarding_policy_t::DROP);
     set_action_forwarding_policy(forwarding_policy_t::DROP);
+    set_mtu_forwarding_policy(forwarding_policy_t::DROP);
     register_action_handler(ACTION_KEY_STREAM_CMD,
         [this](const res_source_info& src, action_info::sptr action) {
             stream_cmd_action_info::sptr stream_cmd_action =
@@ -105,7 +79,7 @@ radio_control_impl::radio_control_impl(make_args_ptr make_args)
                 return;
             }
             const size_t port = src.instance;
-            if (port > get_num_output_ports()) {
+            if (port >= get_num_output_ports()) {
                 RFNOC_LOG_WARNING("Received stream command to invalid output port!");
                 return;
             }
@@ -126,7 +100,7 @@ radio_control_impl::radio_control_impl(make_args_ptr make_args)
                 get_mb_controller()->get_timekeeper(0)->get_time_now()
                 + uhd::time_spec_t(OVERRUN_RESTART_DELAY);
             const size_t port = src.instance;
-            if (port > get_num_output_ports()) {
+            if (port >= get_num_output_ports()) {
                 RFNOC_LOG_WARNING("Received stream command to invalid output port!");
                 return;
             }
@@ -134,13 +108,26 @@ radio_control_impl::radio_control_impl(make_args_ptr make_args)
         });
     // Register spp properties and resolvers
     _spp_prop.reserve(get_num_output_ports());
+    _atomic_item_size_in.reserve(get_num_input_ports());
+    _atomic_item_size_out.reserve(get_num_output_ports());
     _samp_rate_in.reserve(get_num_input_ports());
     _samp_rate_out.reserve(get_num_output_ports());
     _type_in.reserve(get_num_input_ports());
     _type_out.reserve(get_num_output_ports());
     for (size_t chan = 0; chan < get_num_output_ports(); ++chan) {
+        // Default SPP is the maximum value we can fit through the edge, given our MTU
+        const int default_spp =
+            get_max_spp(get_max_payload_size({res_source_info::OUTPUT_EDGE, chan}));
         _spp_prop.push_back(
-            property_t<int>(PROP_KEY_SPP, DEFAULT_SPP, {res_source_info::USER, chan}));
+            property_t<int>(PROP_KEY_SPP, default_spp, {res_source_info::USER, chan}));
+        _atomic_item_size_in.push_back(
+            property_t<size_t>(PROP_KEY_ATOMIC_ITEM_SIZE,
+            get_atomic_item_size(),
+            {res_source_info::INPUT_EDGE, chan}));
+        _atomic_item_size_out.push_back(
+            property_t<size_t>(PROP_KEY_ATOMIC_ITEM_SIZE,
+            get_atomic_item_size(),
+            {res_source_info::OUTPUT_EDGE, chan}));
         _samp_rate_in.push_back(property_t<double>(
             PROP_KEY_SAMP_RATE, get_tick_rate(), {res_source_info::INPUT_EDGE, chan}));
         _samp_rate_out.push_back(property_t<double>(
@@ -157,6 +144,8 @@ radio_control_impl::radio_control_impl(make_args_ptr make_args)
             _radio_reg_iface.poke32(
                 regmap::REG_RX_MAX_WORDS_PER_PKT, words_per_pkt, chan);
         });
+        register_property(&_atomic_item_size_in.back());
+        register_property(&_atomic_item_size_out.back());
         register_property(&_samp_rate_in.back());
         register_property(&_samp_rate_out.back());
         register_property(&_type_in.back());
@@ -166,17 +155,15 @@ radio_control_impl::radio_control_impl(make_args_ptr make_args)
             {&_spp_prop.back()},
             [this, chan, &spp = _spp_prop.back()]() {
                 RFNOC_LOG_TRACE("Calling resolver for spp@" << chan);
-                // MTU is max payload size, header with timestamp is already
-                // accounted for
-                const int mtu =
-                    static_cast<int>(get_mtu({res_source_info::OUTPUT_EDGE, chan}));
-                const int mtu_samps       = mtu / (_samp_width / 8);
-                const int max_spp_per_mtu = mtu_samps - (mtu_samps % _spc);
-                if (spp.get() > max_spp_per_mtu) {
-                    RFNOC_LOG_DEBUG("spp value " << spp.get() << " exceeds MTU of "
-                                                   << mtu << "! Coercing to "
-                                                   << max_spp_per_mtu);
-                    spp = max_spp_per_mtu;
+                const size_t max_pyld =
+                    get_max_payload_size({res_source_info::OUTPUT_EDGE, chan});
+                const int max_spp = get_max_spp(max_pyld);
+                if (spp.get() > max_spp) {
+                    RFNOC_LOG_DEBUG("spp value "
+                                    << spp.get() << " exceeds MTU of "
+                                    << get_mtu({res_source_info::OUTPUT_EDGE, chan})
+                                    << "! Coercing to " << max_spp);
+                    spp = max_spp;
                 }
                 if (spp.get() % _spc) {
                     spp = spp.get() - (spp.get() % _spc);
@@ -185,10 +172,34 @@ radio_control_impl::radio_control_impl(make_args_ptr make_args)
                         << spp.get());
                 }
                 if (spp.get() <= 0) {
-                    spp = DEFAULT_SPP;
+                    spp = max_spp;
                     RFNOC_LOG_WARNING(
                         "spp must be greater than zero! Coercing to " << spp.get());
                 }
+            });
+        add_property_resolver({&_atomic_item_size_in.back(),
+            get_mtu_prop_ref({res_source_info::INPUT_EDGE, chan})},
+            {&_atomic_item_size_in.back()},
+            [this, chan,
+                &ais_in = _atomic_item_size_in.back()]() {
+                ais_in = uhd::math::lcm<size_t>(ais_in, get_atomic_item_size());
+                ais_in = std::min<size_t>(ais_in, get_mtu({res_source_info::INPUT_EDGE, chan}));
+                if (ais_in.get() % get_atomic_item_size() > 0) {
+                    ais_in = ais_in - (ais_in.get() % get_atomic_item_size());
+                }
+                RFNOC_LOG_TRACE("Resolve atomic item size in to " << ais_in);
+            });
+        add_property_resolver({&_atomic_item_size_out.back(),
+            get_mtu_prop_ref({res_source_info::OUTPUT_EDGE, chan})},
+            {&_atomic_item_size_out.back()},
+            [this, chan,
+                &ais_out = _atomic_item_size_out.back()]() {
+                ais_out = uhd::math::lcm<size_t>(ais_out, get_atomic_item_size());
+                ais_out = std::min<size_t>(ais_out, get_mtu({res_source_info::OUTPUT_EDGE, chan}));
+                if (ais_out.get() % get_atomic_item_size() > 0) {
+                    ais_out = ais_out - (ais_out.get() % get_atomic_item_size());
+                }
+                RFNOC_LOG_TRACE("Resolve atomic item size out to " << ais_out);
             });
         // Note: The following resolver calls coerce_rate(), which is virtual.
         // At run time, it will use the implementation by the child class.
@@ -198,7 +209,6 @@ radio_control_impl::radio_control_impl(make_args_ptr make_args)
                 chan,
                 &samp_rate_in  = _samp_rate_in.at(chan),
                 &samp_rate_out = _samp_rate_out.at(chan)]() {
-                const auto UHD_UNUSED(log_chan) = chan;
                 RFNOC_LOG_TRACE("Calling resolver for samp_rate@" << chan);
                 samp_rate_in  = coerce_rate(samp_rate_in.get());
                 samp_rate_out = samp_rate_in.get();
@@ -216,7 +226,7 @@ radio_control_impl::radio_control_impl(make_args_ptr make_args)
     RFNOC_LOG_TRACE("Sending async messages to EPID "
                     << regs().get_src_epid() << ", remote port " << regs().get_port_num()
                     << ", xbar port " << xbar_port);
-    for (size_t tx_chan = 0; tx_chan < get_num_output_ports(); tx_chan++) {
+    for (size_t tx_chan = 0; tx_chan < get_num_input_ports(); tx_chan++) {
         // Set the EPID and port of our regs() object (all async messages go to
         // the same location)
         _radio_reg_iface.poke32(
@@ -230,7 +240,7 @@ radio_control_impl::radio_control_impl(make_args_ptr make_args)
             regmap::SWREG_TX_ERR + regmap::SWREG_CHAN_OFFSET * tx_chan,
             tx_chan);
     }
-    for (size_t rx_chan = 0; rx_chan < get_num_input_ports(); rx_chan++) {
+    for (size_t rx_chan = 0; rx_chan < get_num_output_ports(); rx_chan++) {
         // Set the EPID and port of our regs() object (all async messages go to
         // the same location)
         _radio_reg_iface.poke32(
@@ -292,6 +302,26 @@ uhd::meta_range_t radio_control_impl::get_rate_range() const
 size_t radio_control_impl::get_spc() const
 {
     return _spc;
+}
+
+
+/******************************************************************************
+ * Time-Related API Calls
+ *****************************************************************************/
+uint64_t radio_control_impl::get_ticks_now()
+{
+    // Time registers added in 0.1
+    if (_fpga_compat < 1) {
+        return get_mb_controller()->get_timekeeper(0)->get_ticks_now();
+    }
+    // Applying the command time here allows for testing of timed commands,
+    // but all register accesses should use the command time by default.
+    return regs().peek64(regmap::REG_TIME_LO, get_command_time(0));
+}
+
+uhd::time_spec_t radio_control_impl::get_time_now()
+{
+    return uhd::time_spec_t::from_ticks(get_ticks_now(), get_rate());
 }
 
 /****************************************************************************
@@ -955,7 +985,7 @@ bool radio_control_impl::async_message_validator(
         return false;
     }
     if (addr_base == regmap::SWREG_RX_ERR) {
-        if (chan > get_num_output_ports()) {
+        if (chan >= get_num_output_ports()) {
             return false;
         }
         switch (code) {
@@ -968,7 +998,7 @@ bool radio_control_impl::async_message_validator(
         }
     }
     if (addr_base == regmap::SWREG_TX_ERR) {
-        if (chan > get_num_input_ports()) {
+        if (chan >= get_num_input_ports()) {
             return false;
         }
         switch (code) {
@@ -1001,7 +1031,7 @@ void radio_control_impl::async_message_handler(
     }
     // Reminder: The address is calculated as:
     // BASE + 64 * chan + addr_offset
-    // BASE == 0x0000 for RX, 0x1000 for TX
+    // BASE == 0x0000 for TX, 0x1000 for RX
     const uint32_t addr_base = (addr >= regmap::SWREG_RX_ERR) ? regmap::SWREG_RX_ERR
                                                               : regmap::SWREG_TX_ERR;
     const uint32_t chan = (addr - addr_base) / regmap::SWREG_CHAN_OFFSET;
@@ -1021,7 +1051,7 @@ void radio_control_impl::async_message_handler(
     }
     switch (addr_base + addr_offset) {
         case regmap::SWREG_TX_ERR: {
-            if (chan > get_num_input_ports()) {
+            if (chan >= get_num_input_ports()) {
                 RFNOC_LOG_WARNING(
                     "Cannot process TX-related async message to invalid chan " << chan);
                 return;
@@ -1057,7 +1087,7 @@ void radio_control_impl::async_message_handler(
             break;
         }
         case regmap::SWREG_RX_ERR: {
-            if (chan > get_num_input_ports()) {
+            if (chan >= get_num_output_ports()) {
                 RFNOC_LOG_WARNING(
                     "Cannot process RX-related async message to invalid chan " << chan);
                 return;
@@ -1090,4 +1120,10 @@ void radio_control_impl::async_message_handler(
             RFNOC_LOG_WARNING(str(
                 boost::format("Received async message to invalid addr 0x%08X!") % addr));
     }
+}
+
+int radio_control_impl::get_max_spp(const size_t bytes)
+{
+    const int packet_samps = bytes / (_samp_width / 8);
+    return packet_samps - (packet_samps % _spc);
 }

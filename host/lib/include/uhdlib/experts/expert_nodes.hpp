@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include <boost/core/demangle.hpp>
 #include <functional>
+#include <iostream>
 #include <list>
 #include <memory>
 #include <mutex>
@@ -391,10 +392,16 @@ public:
     {
         return !(get() == rhs);
     }
+
+    friend std::ostream& operator<<(std::ostream& os, const data_reader_t& reader)
+    {
+        os << reader.get();
+        return os;
+    }
 };
 
 /*!---------------------------------------------------------
- * class data_reader_t
+ * class data_writer_t
  *
  * Accessor to read and write the value of a data node and
  * to establish a worker node => data node dependency

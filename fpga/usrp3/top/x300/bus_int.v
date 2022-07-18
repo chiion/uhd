@@ -177,7 +177,16 @@ module bus_int #(
    localparam COMPAT_MINOR       = 16'h0000;
    localparam NUM_TIMEKEEPERS    = 1;
 
-   localparam [15:0] RFNOC_PROTOVER  = {8'd1, 8'd0};
+   // Include the RFNoC image core header file
+   `ifdef RFNOC_IMAGE_CORE_HDR
+     `include `"`RFNOC_IMAGE_CORE_HDR`"
+   `else
+     ERROR_RFNOC_IMAGE_CORE_HDR_not_defined();
+     `define CHDR_WIDTH     64
+     `define RFNOC_PROTOVER { 8'd1, 8'd0 }
+   `endif
+   localparam CHDR_W         = `CHDR_WIDTH;
+   localparam RFNOC_PROTOVER = `RFNOC_PROTOVER;
 
    wire [31:0] 	        set_data;
    wire [7:0] 	        set_addr;
@@ -439,12 +448,12 @@ module bus_int #(
        RB_FP_GPIO_SRC: rb_data = fp_gpio_src;
        SR_BASE_TIME: begin
                        rb_data = radio_time[31:0];
-                       radio_time_hi_ld = 1'b1;
+                       radio_time_hi_ld = rb_rd_stb;
                      end
        SR_BASE_TIME + 'h04: rb_data = radio_time_hi;
        SR_BASE_TIME + 'h14: begin
                            rb_data = radio_time_last_pps[31:0];
-                           radio_time_last_pps_hi_ld = 1'b1;
+                           radio_time_last_pps_hi_ld = rb_rd_stb;
                          end
        SR_BASE_TIME + 'h18: rb_data = radio_time_last_pps_hi;
        SR_BASE_TIME + 'h1C: rb_data = period_ns_q32_tb[31:0];
@@ -733,7 +742,8 @@ module bus_int #(
     ///////////////////////////////////////////////////////////////////////////
 
   rfnoc_image_core #(
-    .PROTOVER(RFNOC_PROTOVER)
+    .CHDR_W   (CHDR_W),
+    .PROTOVER (RFNOC_PROTOVER)
   ) rfnoc_sandbox_i (
     .chdr_aclk               (clk        ),
     .ctrl_aclk               (clk_div2   ),

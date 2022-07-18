@@ -21,6 +21,8 @@
 #include <uhd/types/wb_iface.hpp>
 #include <uhdlib/experts/expert_factory.hpp>
 #include <uhdlib/rfnoc/rf_control/dboard_iface.hpp>
+#include <uhdlib/rfnoc/rf_control/antenna_iface.hpp>
+#include <uhdlib/rfnoc/rf_control/nameless_gain_mixin.hpp>
 #include <uhdlib/usrp/common/mpmd_mb_controller.hpp>
 #include <uhdlib/usrp/common/pwr_cal_mgr.hpp>
 #include <uhdlib/usrp/common/rpc.hpp>
@@ -40,7 +42,10 @@ const static uint16_t ZBX_PID = 0x4002;
 
 /*! Provide access to a ZBX radio.
  */
-class zbx_dboard_impl : public uhd::usrp::x400::x400_dboard_iface
+class zbx_dboard_impl :
+    public uhd::usrp::x400::x400_dboard_iface,
+    public uhd::rfnoc::rf_control::antenna_radio_control_mixin,
+    public uhd::rfnoc::rf_control::nameless_gain_mixin
 {
 public:
     using sptr                  = std::shared_ptr<zbx_dboard_impl>;
@@ -109,17 +114,6 @@ public:
         return _rx_gain_profile_api;
     }
 
-    void set_tx_antenna(const std::string& ant, const size_t chan) override;
-    void set_rx_antenna(const std::string& ant, const size_t chan) override;
-    std::vector<std::string> get_tx_antennas(const size_t /*chan*/) const override
-    {
-        return TX_ANTENNAS;
-    }
-    std::vector<std::string> get_rx_antennas(const size_t /*chan*/) const override
-    {
-        return RX_ANTENNAS;
-    }
-
     double set_tx_frequency(const double freq, const size_t chan) override;
     double set_rx_frequency(const double freq, const size_t chan) override;
     uhd::freq_range_t get_tx_frequency_range(const size_t /*chan*/) const override
@@ -148,27 +142,19 @@ public:
             .get();
     }
 
-    double set_tx_gain(const double gain, const size_t chan) override;
+    using core_iface::set_tx_gain;
+    using core_iface::get_tx_gain;
+    using core_iface::set_rx_gain;
+    using core_iface::get_rx_gain;
+    using core_iface::get_tx_gain_range;
+    using core_iface::get_rx_gain_range;
+
     double set_tx_gain(
         const double gain, const std::string& name, const size_t chan) override;
-    double set_rx_gain(const double gain, const size_t chan) override;
     double set_rx_gain(
         const double gain, const std::string& name, const size_t chan) override;
-    double get_rx_gain(const size_t chan) override;
-    double get_tx_gain(const size_t chan) override;
     double get_rx_gain(const std::string& name, const size_t chan) override;
     double get_tx_gain(const std::string& name, const size_t chan) override;
-
-    uhd::gain_range_t get_tx_gain_range(const size_t /*chan*/) const override
-    {
-        return ZBX_TX_GAIN_RANGE;
-    }
-    uhd::gain_range_t get_rx_gain_range(const size_t /*chan*/) const override
-    {
-        // FIXME This should return a ZBX_RX_LOW_FREQ_GAIN_RANGE when freq is
-        // low, but this function is const
-        return ZBX_RX_GAIN_RANGE;
-    }
 
     // LO Property Getters
     std::vector<std::string> get_tx_lo_names(const size_t /*chan*/) const override
@@ -239,8 +225,6 @@ public:
      * Radio Identification API Calls
      *************************************************************************/
 
-    std::string get_tx_antenna(size_t chan) const override;
-    std::string get_rx_antenna(size_t chan) const override;
     double get_tx_frequency(size_t chan) override;
     double get_rx_frequency(size_t chan) override;
     double get_rx_bandwidth(size_t chan) override;

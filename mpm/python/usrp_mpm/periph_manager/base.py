@@ -659,7 +659,7 @@ class PeriphManagerBase(object):
             self.dboards.append(db_class(dboard_idx, **dboard_info))
         self.log.info("Initialized %d daughterboard(s).", len(self.dboards))
 
-    def _add_public_methods(self, src, prefix="", filter_cb=None):
+    def _add_public_methods(self, src, prefix="", filter_cb=None, allow_overwrite=False):
         """
         Add public methods (=API) of src to self. To avoid naming conflicts and
         make relations clear, all added method names are prefixed with 'prefix'.
@@ -677,6 +677,8 @@ class PeriphManagerBase(object):
         :param prefix: method names in dest will be prefixed with prefix
         :param filter_cb: A callback that returns true if the method should be
                           added. Defaults to always returning True
+        :param allow_overwrite: If True, then methods from src will overwrite
+                                existing methods on self. Use with care.
         """
         filter_cb = filter_cb or (lambda *args: True)
         assert callable(filter_cb)
@@ -691,7 +693,7 @@ class PeriphManagerBase(object):
                      and filter_cb(name, getattr(src, name))
                      ]:
             destname = prefix + name
-            if hasattr(self, destname):
+            if hasattr(self, destname) and not allow_overwrite:
                 self.log.warn("Cannot add method {} because it would "
                               "overwrite existing method.".format(destname))
             else:
@@ -1216,6 +1218,14 @@ class PeriphManagerBase(object):
     #######################################################################
     # Sync API
     #######################################################################
+    def get_clock_source(self):
+        " Returns the currently selected clock source "
+        raise NotImplementedError("get_clock_source() not available on this device!")
+
+    def get_time_source(self):
+        " Returns the currently selected time source "
+        raise NotImplementedError("get_time_source() not available on this device!")
+
     def get_sync_source(self):
         """
         Gets the current time and clock source
@@ -1224,6 +1234,57 @@ class PeriphManagerBase(object):
             "time_source": self.get_time_source(),
             "clock_source": self.get_clock_source(),
         }
+
+    def get_clock_sources(self):
+        """
+        Returns a list of valid clock sources. This is a list of strings.
+        """
+        self.log.warning("get_clock_sources() was not specified for this device!")
+        return []
+
+    def get_time_sources(self):
+        """
+        Returns a list of valid time sources. This is a list of strings.
+        """
+        self.log.warning("get_time_sources() was not specified for this device!")
+        return []
+
+    def get_sync_sources(self):
+        """
+        Returns a list of valid sync sources. This is a list of dictionaries.
+        """
+        self.log.warning("get_sync_sources() was not specified for this device!")
+        return []
+
+    def set_clock_source(self, *args):
+        """
+        Set a clock source.
+
+        The choice to allow arbitrary arguments is based on historical decisions
+        and backward compatibility. UHD/mpmd will call this with a single argument,
+        so args[0] is the clock source (as a string).
+        """
+        raise NotImplementedError("set_clock_source() not available on this device!")
+
+    def set_time_source(self, time_source):
+        " Set a time source "
+        raise NotImplementedError("set_time_source() not available on this device!")
+
+    def set_sync_source(self, sync_args):
+        """
+        If a device has no special code for setting the sync-source atomically,
+        we simply forward these settings to set_clock_source() and set_time_source()
+        (in that order).
+        """
+        if sync_args not in self.get_sync_sources():
+            sync_args_str = \
+                ','.join([str(k) + '=' + str(v) for k, v in sync_args.items()])
+            self.log.warn(
+                f"Attempting to set unrecognized Sync source `{sync_args_str}'!")
+        clock_source = sync_args.get('clock_source', self.get_clock_source())
+        time_source = sync_args.get('time_source', self.get_time_source())
+        self.set_clock_source(clock_source)
+        self.set_time_source(time_source)
 
     ###########################################################################
     # Clock/Time API

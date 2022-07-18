@@ -28,7 +28,6 @@ from usrp_mpm.periph_manager.n3xx_periphs import BackpanelGPIO
 from usrp_mpm.periph_manager.n3xx_periphs import MboardRegsControl
 from usrp_mpm.periph_manager.n3xx_periphs import RetimerQSFP
 from usrp_mpm.dboard_manager.magnesium import Magnesium
-from usrp_mpm.dboard_manager.eiscat import EISCAT
 from usrp_mpm.dboard_manager.rhodium import Rhodium
 
 N3XX_DEFAULT_EXT_CLOCK_FREQ = 10e6
@@ -49,7 +48,6 @@ N3XX_FPGPIO_WIDTH = 12
 
 # Import daughterboard PIDs from their respective classes
 MG_PID = Magnesium.pids[0]
-EISCAT_PID = EISCAT.pids[0]
 RHODIUM_PID = Rhodium.pids[0]
 
 ###############################################################################
@@ -109,7 +107,6 @@ class n3xx(ZynqComponents, PeriphManagerBase):
                                             # still use the n310.bin image.
                                             # We'll leave this here for
                                             # debugging purposes.
-        ('n310', (EISCAT_PID , EISCAT_PID )): 'eiscat',
         ('n310', (RHODIUM_PID, RHODIUM_PID)): 'n320',
         ('n310', (RHODIUM_PID,            )): 'n320',
     }
@@ -126,7 +123,12 @@ class n3xx(ZynqComponents, PeriphManagerBase):
     mboard_eeprom_offset = 0
     mboard_eeprom_max_len = 256
     mboard_info = {"type": "n3xx"}
-    mboard_max_rev = 10 # latest HW revision that this version of MPM is aware of
+    # This is the latest HW revision that his version of MPM is aware of. This
+    # version of MPM will be able to run with any hardware which has a rev_compat
+    # field that is equal or less than this value.
+    # Note: If the hardware is revved in a non-compatible way, eeprom-init.c
+    # must also be updated (derive_rev_compat).
+    mboard_max_rev = 10
     mboard_sensor_callback_map = {
         'ref_locked': 'get_ref_lock_sensor',
         'gps_locked': 'get_gps_lock_sensor',
@@ -418,6 +420,7 @@ class n3xx(ZynqComponents, PeriphManagerBase):
             self.log.error(
                 "Cannot run init(), device was never fully initialized!")
             return False
+        args = self._update_default_args(args)
         # We need to disable the PPS out during clock and dboard initialization in order
         # to avoid glitches.
         self.enable_pps_out(False)
@@ -427,8 +430,8 @@ class n3xx(ZynqComponents, PeriphManagerBase):
         # properties should have been set to either the default values (first time
         # init() is run); or to the previous configured values (updated after a
         # successful clocking configuration).
-        args['clock_source'] = args.get('clock_source', self._clock_source)
-        args['time_source'] = args.get('time_source', self._time_source)
+        args['clock_source'] = args.get('clock_source', N3XX_DEFAULT_CLOCK_SOURCE)
+        args['time_source'] = args.get('time_source', N3XX_DEFAULT_TIME_SOURCE)
         self.set_sync_source(args)
         # Uh oh, some hard coded product-related info: The N300 has no LO
         # source connectors on the front panel, so we assume that if this was

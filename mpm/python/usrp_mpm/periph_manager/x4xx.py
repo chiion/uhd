@@ -12,7 +12,6 @@ import copy
 from time import sleep
 from os import path
 from collections import namedtuple
-from pyudev import DeviceNotFoundByNameError
 from usrp_mpm import lib # Pulls in everything from C++-land
 from usrp_mpm import tlv_eeprom
 from usrp_mpm.cores import WhiteRabbitRegsControl
@@ -28,7 +27,7 @@ from usrp_mpm.periph_manager import PeriphManagerBase
 from usrp_mpm.xports import XportMgrUDP
 from usrp_mpm.periph_manager.x4xx_periphs import MboardRegsControl
 from usrp_mpm.periph_manager.x4xx_periphs import CtrlportRegs
-from usrp_mpm.periph_manager.x4xx_periphs import DioControl
+from usrp_mpm.periph_manager.x4xx_dio_control import DioControl
 from usrp_mpm.periph_manager.x4xx_periphs import QSFPModule
 from usrp_mpm.periph_manager.x4xx_periphs import get_temp_sensor
 from usrp_mpm.periph_manager.x4xx_mb_cpld import MboardCPLD
@@ -45,7 +44,7 @@ X400_DEFAULT_MASTER_CLOCK_RATE = 122.88e6
 X400_DEFAULT_TIME_SOURCE = X4xxClockMgr.TIME_SOURCE_INTERNAL
 X400_DEFAULT_CLOCK_SOURCE = X4xxClockMgr.CLOCK_SOURCE_INTERNAL
 X400_DEFAULT_ENABLE_PPS_EXPORT = True
-X400_FPGA_COMPAT = (7, 3)
+X400_FPGA_COMPAT = (7, 7)
 X400_DEFAULT_TRIG_DIRECTION = ClockingAuxBrdControl.DIRECTION_OUTPUT
 X400_MONITOR_THREAD_INTERVAL = 1.0 # seconds
 QSFPModuleConfig = namedtuple("QSFPModuleConfig", "modprs modsel devsymbol")
@@ -162,7 +161,7 @@ class x4xx(ZynqComponents, PeriphManagerBase):
     mboard_eeprom_max_len = 256
     mboard_eeprom_magic = eeprom_magic
     mboard_info = {"type": "x4xx"}
-    mboard_max_rev = 6  # RevF
+    mboard_max_rev = 7  # RevG
     max_num_dboards = 2
     mboard_sensor_callback_map = {
         # List of motherboard sensors that are always available. There are also
@@ -485,7 +484,8 @@ class x4xx(ZynqComponents, PeriphManagerBase):
         self._add_public_methods(
             self._clk_mgr,
             prefix="",
-            filter_cb=lambda name, method: not hasattr(method, '_norpc')
+            filter_cb=lambda name, method: not hasattr(method, '_norpc'),
+            allow_overwrite=True
         )
 
         # Overlay must be applied after clocks have been configured
@@ -562,7 +562,7 @@ class x4xx(ZynqComponents, PeriphManagerBase):
         self._status_monitor_thread.start()
         # Init complete.
         self.log.debug("Device info: {}".format(self.device_info))
-        
+
     def _init_dio_control(self, _):
         """
         Turn on gpio peripherals. This may throw an error on failure, so make
@@ -632,6 +632,7 @@ class x4xx(ZynqComponents, PeriphManagerBase):
             self.log.warning(
                 "Cannot run init(), device was never fully initialized!")
             return False
+        args = self._update_default_args(args)
 
         # We need to disable the PPS out during clock and dboard initialization in order
         # to avoid glitches.
@@ -639,9 +640,9 @@ class x4xx(ZynqComponents, PeriphManagerBase):
             self._clocking_auxbrd.set_trig(False)
 
         # If the caller has not specified clock_source or time_source, set them
-        # to the values currently configured.
-        args['clock_source'] = args.get('clock_source', self._clk_mgr.get_clock_source())
-        args['time_source'] = args.get('time_source', self._clk_mgr.get_time_source())
+        # to the default values.
+        args['clock_source'] = args.get('clock_source', X400_DEFAULT_CLOCK_SOURCE)
+        args['time_source'] = args.get('time_source', X400_DEFAULT_TIME_SOURCE)
         self.set_sync_source(args)
 
         # If a Master Clock Rate was specified,
@@ -1029,19 +1030,22 @@ class x4xx(ZynqComponents, PeriphManagerBase):
     ###########################################################################
     # GPIO API
     ###########################################################################
-    
     def get_gpio_banks(self):
         """
         Returns a list of GPIO banks over which MPM has any control
         """
+        if self.dio_control is None:
+            return []
         return self.dio_control.get_gpio_banks()
-    
+
     def get_gpio_srcs(self, bank: str):
         """
         Return a list of valid GPIO sources for a given bank
         """
+        if self.dio_control is None:
+            return []
         return self.dio_control.get_gpio_srcs(bank)
-    
+
     def get_gpio_src(self, bank: str):
         """
         Return the currently selected GPIO source for a given bank. The return
@@ -1049,8 +1053,10 @@ class x4xx(ZynqComponents, PeriphManagerBase):
         the number of controllable GPIO pins on this bank. CUSTOM is for
         miscellaneous pin source, and USER_APP is for LabView pin source.
         """
+        if self.dio_control is None:
+            raise RuntimeError("Unable to query GPIO source: No valid DIO board installed.")
         return self.dio_control.get_gpio_src(bank)
-    
+
     def set_gpio_src(self, bank: str, *src):
         """
         Set the GPIO source for a given bank.
@@ -1059,6 +1065,8 @@ class x4xx(ZynqComponents, PeriphManagerBase):
         > set_gpio_src <bank> <srcs>
         > set_gpio_src GPIO0 PS DB1_RF1 PS PS MPM PS PS PS MPM USER_APP PS
         """
+        if self.dio_control is None:
+            raise RuntimeError("Unable to set GPIO source: No valid DIO board installed.")
         self.dio_control.set_gpio_src(bank, *src)
 
     ###########################################################################
@@ -1328,7 +1336,7 @@ class x4xx(ZynqComponents, PeriphManagerBase):
 
     def get_gps_sensor_status(self):
         """
-        Get all status of GPS as sensor dict
+        Get all status info of GPS in a single string. This is a debugging API.
         """
         assert self._gps_mgr
         self.log.trace("Reading all GPS status pins")

@@ -20,9 +20,9 @@ find_package(Git QUIET)
 #  - set UHD_VERSION_DEVEL to true for master and development branches
 ########################################################################
 set(UHD_VERSION_MAJOR 4)
-set(UHD_VERSION_API   2)
+set(UHD_VERSION_API   3)
 set(UHD_VERSION_ABI   0)
-set(UHD_VERSION_PATCH git)
+set(UHD_VERSION_PATCH 0)
 set(UHD_VERSION_DEVEL TRUE)
 
 ########################################################################
@@ -137,15 +137,20 @@ endif()
 if(DEFINED UHD_VERSION)
     set(UHD_VERSION "${UHD_VERSION}" CACHE STRING "Set UHD_VERSION to a custom value")
 elseif(TRIM_UHD_VERSION STREQUAL "True")
-    set(UHD_VERSION "${UHD_VERSION_MAJOR}.${UHD_VERSION_API}.${UHD_VERSION_ABI}.${UHD_VERSION_PATCH}-${UHD_GIT_HASH}")
+    set(UHD_VERSION "${UHD_VERSION_MAJOR}.${UHD_VERSION_API}.${UHD_VERSION_ABI}.${UHD_VERSION_PATCH}-${UHD_GIT_HASH}" CACHE STRING "")
 else()
-    set(UHD_VERSION "${UHD_VERSION_MAJOR}.${UHD_VERSION_API}.${UHD_VERSION_ABI}.${UHD_VERSION_PATCH}-${UHD_GIT_COUNT}-${UHD_GIT_HASH}")
+    set(UHD_VERSION "${UHD_VERSION_MAJOR}.${UHD_VERSION_API}.${UHD_VERSION_ABI}.${UHD_VERSION_PATCH}-${UHD_GIT_COUNT}-${UHD_GIT_HASH}" CACHE STRING "")
 endif()
 if(DEFINED UHD_ABI_VERSION)
     set(UHD_ABI_VERSION "${UHD_ABI_VERSION}"
         CACHE STRING "Set UHD_ABI_VERSION to a custom value")
 else()
     set(UHD_ABI_VERSION "${UHD_VERSION_MAJOR}.${UHD_VERSION_API}.${UHD_VERSION_ABI}")
+endif()
+
+if(UNDERSCORE_UHD_VERSION)
+    string(REPLACE "-" "_" _uhd_version $CACHE{UHD_VERSION})
+    set(UHD_VERSION "${_uhd_version}" CACHE STRING "" FORCE)
 endif()
 
 set(UHD_COMPONENT "UHD")

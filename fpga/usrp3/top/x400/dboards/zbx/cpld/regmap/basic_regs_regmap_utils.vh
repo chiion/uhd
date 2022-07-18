@@ -1,5 +1,5 @@
 //
-// Copyright 2021 Ettus Research, A National Instruments Company
+// Copyright 2022 Ettus Research, A National Instruments Company
 //
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
@@ -29,7 +29,7 @@
   localparam BASIC_REGISTERS_VALUES_SIZE = 3;
   localparam BOARD_ID_VALUE        = 'h4002;  // BASIC_REGISTERS_VALUES:BOARD_ID_VALUE
   localparam OLDEST_CPLD_REVISION  = 'h20110611;  // BASIC_REGISTERS_VALUES:OLDEST_CPLD_REVISION
-  localparam CPLD_REVISION         = 'h21031009;  // BASIC_REGISTERS_VALUES:CPLD_REVISION
+  localparam CPLD_REVISION         = 'h21111614;  // BASIC_REGISTERS_VALUES:CPLD_REVISION
 
   // SLAVE_SIGNATURE Register (from basic_regs.v)
   localparam SLAVE_SIGNATURE = 'h0; // Register Offset

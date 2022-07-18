@@ -8,8 +8,8 @@
 #pragma once
 
 #include <uhd/config.hpp>
-#include <boost/current_function.hpp>
 #include <boost/date_time/posix_time/posix_time_types.hpp>
+#include <boost/optional.hpp>
 #include <iomanip>
 #include <iostream>
 #include <ostream>
@@ -122,6 +122,12 @@ enum severity_level {
     fatal   = 5, /**< something has gone horribly wrong */
     off     = 6, /**< logging is turned off */
 };
+
+/*! Parses a `severity_level` from a string. If a value could not be parsed,
+ * returns none.
+ */
+boost::optional<uhd::log::severity_level> UHD_API parse_log_level_from_string(
+    const std::string& log_level_str);
 
 /*! Logging info structure
  *
@@ -264,7 +270,7 @@ UHD_API void set_logger_level(const std::string& logger, uhd::log::severity_leve
 //! Helpful debug tool to print site info
 #    define UHD_HERE()            \
         UHD_LOGGER_DEBUG("DEBUG") \
-            << __FILE__ << ":" << __LINE__ << " (" << __PRETTY_FUNCTION__ << ")";
+            << __FILE__ << ":" << __LINE__ << " (" << UHD_PRETTY_FUNCTION << ")";
 #else
 //! Helpful debug tool to print site info
 #    define UHD_HERE() UHD_LOGGER_DEBUG("DEBUG") << __FILE__ << ":" << __LINE__;

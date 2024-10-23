@@ -1,6 +1,6 @@
 //////////////////////////////////////////////////////////////////////////////////
 // Company: 
-// Engineer: 
+// Engineer:    Fei Chen
 // 
 // Create Date:    16:14:16 11/12/2021 
 // Design Name: 
@@ -63,7 +63,7 @@ module gpio_atr_custom #(
 
 
   //10 bit counter
-  reg [11:0] counter;
+  reg [15:0] counter;
   reg [9:0] counter_buf;
   always @(posedge clk) begin
 		if (reset) begin
@@ -72,7 +72,8 @@ module gpio_atr_custom #(
 		end
 		else begin
 			counter <= counter + 1;
-			counter_buf[7:0] <= counter[11:4];
+			counter_buf[7:0] <= counter[15:8];      // output at every GPIOs
+			//counter_buf[6:5] <= counter[14:13];   //only output needed frequency to reduce RF emission
 		end
   end
  

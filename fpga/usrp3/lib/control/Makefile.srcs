@@ -26,6 +26,7 @@ filter_bad_sid.v \
 gearbox_2x1.v \
 gpio_atr_io.v \
 gpio_atr.v \
+gpio_atr_custom.v \
 gray2bin.v \
 por_gen.v \
 priority_encoder_one_hot.v \
